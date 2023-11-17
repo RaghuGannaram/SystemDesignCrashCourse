@@ -4,21 +4,22 @@
 
 -   **Assumptions**:
 
-        -   Number of URLs generated per day:       100M
-        -   Read/Write Ratio:                       10:1
-        -   Average length of long URL:             100 characters
-        -   Data Retention Period:                  5 years
+        -   Number of URLs generated per day:       100 million
+        -   Read/Write Ratio:                       100:1
+        -   Average length of long URL:             2000 characters
+        -   Data Retention Period:                  10 years
 
 -   **Calculations**:
 
-        -   Number of URLs generated per second: 100M/ (24x60x60):      100M / (24 x 60 x 60)   ~= 1,160/second.
-        -   Number of URLs gnerated in the span od 5 years:             100M x 365days x 5years ~= 182.5B
-        -   Write Operations (Shortening URLs) per second:              1,160/second.
-        -   Read Operations (Redirecting to Original URLs) per second:  1,600 x 10 = 11,600/second.
-        -   Storage per URL per second (Using ASCII encoding):          100 bytes/URL.
-        -   Total Storage requirement:                                  (100M x 365days x 5years)url x 100B/url ~= 18.2TB
+        -   Number of URLs generated per second: 100M:                  100 million / (24 x 60 x 60)   ~= 1,160/second.
+        -   Number of URLs gnerated in the span of 10 years:            100 million x 365days x 10years ~= 365 billion
+        -   Number of URLs shortened (Write Operations) per second:     1,160/second.
+        -   Number of URLs redirected (Read Operations) per second:     1,160 x 100 = 116,000/second.
+        -   Storage per URL per second (Using ASCII encoding):          2000B/URL.
+        -   Total Storage requirement:                                  (100 million x 365days x 10years)url x (2000B/long_url + 7B/short_url) ~= 732TB
         -   Transactions Per Second (TPS):                              1,160/second.
-        -   Queries Per Second (QPS):                                   1,160 + 11,600 = 12760/second.
+        -   Queries Per Second (QPS):                                   1,160 + 116,000 = 117,160/second.
+        -   Maximum Required Cache (MRC):                               (20/100) x 116,000 x (2000B + 7B) x 86,400sec = 46.6MB/sec x 86,400sec ~= 4TB
 
 ## 2. User Interface:
 
@@ -171,6 +172,21 @@
 
     -   Implement caching for the URL Shortening and Redirection Service to store recently accessed short URLs.
     -   Use a caching system like **Redis** or **Memcached**.
+    -   **Cache System Configuration Recommendations**
+
+            -   Cache Hit Rate:             Cache hit rate is commonly around 80%, so let's estimate it as 80%.
+            -   Cache Miss Rate:            Cache miss rate = 100% - Cache hit rate = 20%.
+            -   Eviction Policy:            Use a Least Recently Used (LRU) eviction policy for simplicity.
+            -   Expiration Time:            Set an expiration time of 5 minutes for cached entries.
+            -   Cache Compression Ratio:    Assume a conservative compression ratio of 2:1 for cached data.
+            -   Cache Warm-Up Strategy:     Implement a cache warm-up strategy by prepopulating frequently accessed URLs during system initialization.
+            -   Cache Persistence:          Implement a hybrid approach with partial data persistence to disk and in-memory caching for frequently accessed entries.
+            -   Concurrency and Locking:    Implement a concurrency control mechanism, such as fine-grained locking, to handle concurrent access.
+            -   Monitoring and Metrics:     Implement monitoring tools to track cache hit rates, miss rates, and resource usage.
+            -   Scalability:                Choose a cache system that supports horizontal scaling to accommodate increased loads.
+            -   Fault Tolerance:            Implement redundant cache instances and a failover mechanism to handle cache failures.
+            -   Cost Analysis:              Evaluate memory costs based on the cache size needed to accommodate frequently accessed data.
+            -   Testing and Optimization:   Conduct thorough testing to optimize cache configurations for optimal performance.
 
 -   **Asynchronous Processing:**
 
