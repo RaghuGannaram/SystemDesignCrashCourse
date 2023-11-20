@@ -1,6 +1,19 @@
 # URL Shortening Service System Design
 
-## 1. Back of the envelope estimations:
+## 1. Funtional requirements:
+
+-   User can enter a long URL and should be able to generate a short URL.
+-   User can hit the short URL, then he should be redirected to the original URL.
+-   If user hits an invalid/expired short url, he should be redirected to 404 page.
+-   Generated short URLs (and their data) should be cleaned up once the link expires.
+
+## 2. Non functional requirements:
+
+-   The system should be highly available. This is required because, if our service is down, all the URL redirections will start failing.
+-   URL redirection should happen in real-time with minimal latency.
+-   Shortened links should not be guessable (not predictable).
+
+## 3. Back of the envelope estimations:
 
 -   **Assumptions**:
 
@@ -15,13 +28,20 @@
         -   Number of URLs gnerated in the span of 10 years:            100 million x 365days x 10years ~= 365 billion
         -   Number of URLs shortened (Write Operations) per second:     1,160/second.
         -   Number of URLs redirected (Read Operations) per second:     1,160 x 100 = 116,000/second.
-        -   Storage per URL per second (Using ASCII encoding):          2000B/URL.
+
+        -   Storage per URL (Using ASCII encoding):                     2000B/URL.
         -   Total Storage requirement:                                  (100 million x 365days x 10years)url x (2000B/long_url + 7B/short_url) ~= 732TB
+
         -   Transactions Per Second (TPS):                              1,160/second.
         -   Queries Per Second (QPS):                                   1,160 + 116,000 = 117,160/second.
+
         -   Maximum Required Cache (MRC):                               (20/100) x 116,000 x (2000B + 7B) x 86,400sec = 46.6MB/sec x 86,400sec ~= 4TB
 
-## 2. User Interface:
+        -   Network bandwidth for Write Operations (Shortening URLs):   1,160/second x (2000B + 7B) = 2,328,000 Bytes/second.
+        -   Network bandwidth for Read Operations (Redirecting URLs):   116,000/second x 7B =  812,000 Bytes/second.
+        -   Total Network Bandwidth Requirement:                        3,140,000 Bytes/second = 3.14MBps ~= 25.12 Mbps.
+
+## 4. User Interface:
 
 ### API Endpoints:
 
@@ -49,7 +69,7 @@
         Content-Type: application/json
 
         {
-          "short_url": "https://short.ly/zxD32f"
+          "short_url": "https://short.ly/zxD32fk"
         }
         ```
 
@@ -60,7 +80,7 @@
     -   Description: Retrieves the original URL associated with the short code.
     -   Request:
         ```http
-        GET /zxD32f HTTP/1.1
+        GET /zxD32fk HTTP/1.1
         Host: short.ly
         ```
     -   Response:
@@ -70,83 +90,39 @@
         Location: https://www.example.com/long-url-to-be-shortened
         ```
 
-### UI Components:
+## 5. Application Layer:
 
--   **Web Interface:**
+### URL Shortener Service:
 
-    -   Provide a web-based interface for users to manually shorten or expand URLs.
-    -   Include input fields for entering long URLs and displaying the shortened URLs.
+-   **Creation:**
 
--   **Browser Extensions:**
+        **Encoding Actual URL**:
 
-    -   Consider developing browser extensions for popular browsers to allow users to shorten URLs directly from their browsers.
+        -   Compute a unique hash (e.g., MD5 or SHA256) of the URL.
+        -   Encode the hash using base64 encoding (e.g., base62 or base64).
+        -   Choose the first 6 (or 8) characters for the key.
+        -   Workaround for issues: Append an increasing sequence number to each input URL to ensure uniqueness.
 
--   **Mobile App:**
+        **Generating Keys Offline**:
 
-    -   Develop a mobile application to offer URL shortening and redirection features on mobile devices.
-    -   Include a user-friendly interface optimized for mobile screens.
-
--   **QR Code Generation:**
-
-    -   Implement functionality to generate QR codes for shortened URLs, facilitating easy access for mobile users.
-
-### UI Considerations:
-
--   **User Authentication:**
-
-    -   Implement user accounts to provide personalized features and analytics.
-    -   Allow users to manage their shortened URLs.
-
--   **Link Management Dashboard:**
-
-    -   Develop a dashboard where users can view and manage their shortened URLs.
-    -   Include analytics such as click counts and geographic information.
-
--   **URL Preview:**
-
-    -   Offer a preview feature that allows users to preview the original URL before being redirected.
-
--   **Custom Short URLs:**
-
-    -   Optionally, provide users with the ability to customize their short URLs.
-
-## 3. Application Layer:
-
-### URL Shortening Service:
-
--   **Shortening Algorithm:**
-
-    Utilize a unique ID generator to create a unique identifier for each long URL. This unique identifier can serve as the short code.
-
-    -   Commonly used unique ID generation techniques include:
-
-        -   **UUID (Universally Unique Identifier):**
-            -   Generate a UUID (e.g., UUID4) for each long URL. UUIDs are designed to be globally unique.
-        -   **Hashing Algorithms:**
-            -   Apply a hash function (e.g., SHA-256) to the long URL to produce a fixed-length hash, which can be used as the short code.
-
-    -   **Distributed Systems and Unique ID Generation:**
-        -   In a distributed system, ensuring the uniqueness of generated IDs across multiple nodes is crucial.
-        -   **Zookeeper for Sequential Znodes:**
-            -   ZooKeeper can be used to implement a distributed unique ID generation system. Each node can create sequential znodes, and the sequence number appended to the znode can serve as a unique ID.
-            -   This ensures a monotonically increasing series of IDs across the distributed nodes.
+        -   Use a Key Generation Service (KGS) to generate random seven-letter strings (eg. **zxD32fk** ) stored in a key-DB.
+        -   KGS uses two tables: one for unused keys and one for used keys.
+        -   Concurrency solved by marking keys in the database when used and synchronizing data structure access.
+        -   Key-DB size: 2.5TB with base62 encoding for 365 billion (which is lesser than 3.5 trillion available unique 7 character base62) unique seven-letter keys.
+        -   KGS has standby replica to handle failures.
+        -   Application servers can cache keys from key-DB for improved speed.
 
 -   **Redirection:**
 
     -   When a short URL is accessed, redirect the user to the original URL.
     -   Ensure the provided URL is valid.
-    -   Redirect to default 404 page for invalid short URLs.
+    -   Redirect to default 404 page for invalid/expired short URLs.
 
-### Additional Services Considerations:
+### Additional Services:
 
 -   **Rate Limiting:**
 
     -   Implement rate limiting to prevent abuse and ensure fair usage.
-
--   **User Authentication and Authorization:**
-
-    -   Develop a secure authentication system for user accounts.
-    -   Enforce proper authorization to ensure that users can only modify or view their own URLs.
 
 -   **URL Analytics and Tracking:**
 
@@ -158,47 +134,7 @@
     -   Implement a mechanism to set expiration dates for short URLs.
     -   Archive or delete expired URLs to manage the database efficiently.
 
-### Application Layer Considerations:
-
--   **Microservices Architecture:**
-
-    -   Explore the possibility of adopting a microservices architecture for scalability and maintainability.
-        1.  Unique ID Generation Service
-        2.  Analytics Service
-        3.  Authentication Service
-        4.  URL Shortening and Redirection Service
-
--   **Caching Mechanism:**
-
-    -   Implement caching for the URL Shortening and Redirection Service to store recently accessed short URLs.
-    -   Use a caching system like **Redis** or **Memcached**.
-    -   **Cache System Configuration Recommendations**
-
-            -   Cache Hit Rate:             Cache hit rate is commonly around 80%, so let's estimate it as 80%.
-            -   Cache Miss Rate:            Cache miss rate = 100% - Cache hit rate = 20%.
-            -   Eviction Policy:            Use a Least Recently Used (LRU) eviction policy for simplicity.
-            -   Expiration Time:            Set an expiration time of 5 minutes for cached entries.
-            -   Cache Compression Ratio:    Assume a conservative compression ratio of 2:1 for cached data.
-            -   Cache Warm-Up Strategy:     Implement a cache warm-up strategy by prepopulating frequently accessed URLs during system initialization.
-            -   Cache Persistence:          Implement a hybrid approach with partial data persistence to disk and in-memory caching for frequently accessed entries.
-            -   Concurrency and Locking:    Implement a concurrency control mechanism, such as fine-grained locking, to handle concurrent access.
-            -   Monitoring and Metrics:     Implement monitoring tools to track cache hit rates, miss rates, and resource usage.
-            -   Scalability:                Choose a cache system that supports horizontal scaling to accommodate increased loads.
-            -   Fault Tolerance:            Implement redundant cache instances and a failover mechanism to handle cache failures.
-            -   Cost Analysis:              Evaluate memory costs based on the cache size needed to accommodate frequently accessed data.
-            -   Testing and Optimization:   Conduct thorough testing to optimize cache configurations for optimal performance.
-
--   **Asynchronous Processing:**
-
-    -   Consider implementing asynchronous processing for non-time-sensitive tasks to enhance system responsiveness.
-    -   Implement asynchronous processing for tasks like analytics updates, sending notifications, or batch processing of data.
-    -   Use message queues (e.g., **RabbitMQ**, **Apache Kafka**) to manage asynchronous task execution.
-
--   **Scalability Strategies:**
-
-    -   Achieve scalability using strategies such as horizontal scaling, load balancing, and auto-scaling based on demand.
-
-## 4. Data Storage:
+## 6. Data Storage:
 
 ### Database Selection:
 
@@ -282,7 +218,29 @@ Given the characteristics and requirements of the URL shortening service, a NoSQ
 10. **Database Versioning:**
     - Stay updated with the latest database version and apply patches for security and performance improvements.
 
-## 5. Infrastructure:
+## 7. Caching:
+
+-   **Caching Mechanism:**
+
+    -   Implement caching for the URL Shortening and Redirection Service to store recently accessed short URLs.
+    -   Use a caching system like **Redis** or **Memcached**.
+    -   **Cache System Configuration Recommendations**
+
+            -   Cache Hit Rate:             Cache hit rate is commonly around 80%, so let's estimate it as 80%.
+            -   Cache Miss Rate:            Cache miss rate = 100% - Cache hit rate = 20%.
+            -   Eviction Policy:            Use a Least Recently Used (LRU) eviction policy for simplicity.
+            -   Expiration Time:            Set an expiration time of 5 minutes for cached entries.
+            -   Cache Compression Ratio:    Assume a conservative compression ratio of 2:1 for cached data.
+            -   Cache Warm-Up Strategy:     Implement a cache warm-up strategy by prepopulating frequently accessed URLs during system initialization.
+            -   Cache Persistence:          Implement a hybrid approach with partial data persistence to disk and in-memory caching for frequently accessed entries.
+            -   Concurrency and Locking:    Implement a concurrency control mechanism, such as fine-grained locking, to handle concurrent access.
+            -   Monitoring and Metrics:     Implement monitoring tools to track cache hit rates, miss rates, and resource usage.
+            -   Scalability:                Choose a cache system that supports horizontal scaling to accommodate increased loads.
+            -   Fault Tolerance:            Implement redundant cache instances and a failover mechanism to handle cache failures.
+            -   Cost Analysis:              Evaluate memory costs based on the cache size needed to accommodate frequently accessed data.
+            -   Testing and Optimization:   Conduct thorough testing to optimize cache configurations for optimal performance.
+
+## 8. Infrastructure:
 
 ### Components:
 
