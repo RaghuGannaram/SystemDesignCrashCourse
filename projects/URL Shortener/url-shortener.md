@@ -110,7 +110,8 @@
         -   Concurrency solved by marking keys in the database when used and synchronizing data structure access.
         -   Key-DB size: 2.5TB with base62 encoding for 365 billion (which is lesser than 3.5 trillion available unique 7 character base62) unique seven-letter keys.
         -   KGS has standby replica to handle failures.
-        -   Application servers can cache keys from key-DB for improved speed.
+        -   KGS can fetch few keys from the key-DB and keep them ready in the KGS memory to reduce the latency.
+        -   Further, application servers also can fetch keys from the KGS and keep them in each app server's memory for improved speed.
 
 -   **Redirection:**
 
