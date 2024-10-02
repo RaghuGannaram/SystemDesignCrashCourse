@@ -1,47 +1,76 @@
 # URL Shortening Service System Design
 
-## 1. Funtional requirements:
+## System Requirements:
 
--   User can enter a long URL and should be able to generate a short URL.
--   User can hit the short URL, then he should be redirected to the original URL.
--   If user hits an invalid/expired short url, he should be redirected to 404 page.
--   Generated short URLs (and their data) should be cleaned up once the link expires.
+    1. Funtional requirements:
 
-## 2. Non functional requirements:
+    -   User can enter a long URL and should be able to generate a short URL.
+    -   User can hit the short URL, then he should be redirected to the original URL.
+    -   If user hits an invalid/expired short url, he should be redirected to 404 page.
+    -   Generated short URLs (and their data) should be cleaned up once the link expires.
 
--   The system should be highly available. This is required because, if our service is down, all the URL redirections will start failing.
--   URL redirection should happen in real-time with minimal latency.
--   Shortened links should not be guessable (not predictable).
+    2. Non functional requirements:
 
-## 3. Back of the envelope estimations:
+    -   The system should be highly available. This is required because, if our service is down, all the URL redirections will start failing.
+    -   URL redirection should happen in real-time with minimal latency.
+    -   Shortened links should not be guessable (not predictable).
 
--   **Assumptions**:
+## Back of the envelope estimations:
 
-        -   Number of URLs generated per day:       100 million
-        -   Read/Write Ratio:                       100:1
-        -   Average length of long URL:             2000 characters
-        -   Data Retention Period:                  10 years
+    Assumptions :
 
--   **Calculations**:
+    -   Number of URLs generated per day:       100 million
+    -   Read/Write Ratio:                       100:1
+    -   Average length of long URL:             2000 characters
+    -   Data Retention Period:                  10 years
 
-        -   Number of URLs generated per second: 100M:                  100 million / (24 x 60 x 60)   ~= 1,160/second.
-        -   Number of URLs gnerated in the span of 10 years:            100 million x 365days x 10years ~= 365 billion
-        -   Number of URLs shortened (Write Operations) per second:     1,160/second.
-        -   Number of URLs redirected (Read Operations) per second:     1,160 x 100 = 116,000/second.
+    Calculations :
 
-        -   Storage per URL (Using ASCII encoding):                     2000B/URL.
-        -   Total Storage requirement:                                  (100 million x 365days x 10years)url x (2000B/long_url + 7B/short_url) ~= 732TB
+    -   Number of URLs generated per second:                        100 million / (24 x 60 x 60)   ~= 1,160/second.
+    -   Number of URLs gnerated in the span of 10 years:            100 million x 365days x 10years ~= 365 billion
+    -   Number of URLs shortened (Write Operations) per second:     1,160/second.
+    -   Number of URLs redirected (Read Operations) per second:     1,160 x 100 = 116,000/second.
 
-        -   Transactions Per Second (TPS):                              1,160/second.
-        -   Queries Per Second (QPS):                                   1,160 + 116,000 = 117,160/second.
+    -   Storage per URL (Using ASCII encoding):                     2000B/URL.
+    -   Total Storage requirement:                                  (100 million x 365days x 10years)url x (2000B/long_url + 7B/short_url) ~= 732TB
 
-        -   Maximum Required Cache (MRC):                               (20/100) x 116,000 x (2000B + 7B) x 86,400sec = 46.6MB/sec x 86,400sec ~= 4TB
+    -   Transactions Per Second (TPS):                              1,160/second.
+    -   Queries Per Second (QPS):                                   1,160 + 116,000 = 117,160/second.
 
-        -   Network bandwidth for Write Operations (Shortening URLs):   1,160/second x (2000B + 7B) = 2,328,000 Bytes/second.
-        -   Network bandwidth for Read Operations (Redirecting URLs):   116,000/second x 7B =  812,000 Bytes/second.
-        -   Total Network Bandwidth Requirement:                        3,140,000 Bytes/second = 3.14MBps ~= 25.12 Mbps.
+    -   Maximum Required Cache (MRC):                               (20/100) x 116,000 x (2000B + 7B) x 86,400sec = 46.6MB/sec x 86,400sec ~= 4TB
 
-## 4. User Interface:
+    -   Network bandwidth for Write Operations (Shortening URLs):   1,160/second x (2000B + 7B) = 2,328,000 Bytes/second.
+    -   Network bandwidth for Read Operations (Redirecting URLs):   116,000/second x 7B =  812,000 Bytes/second.
+    -   Total Network Bandwidth Requirement:                        3,140,000 Bytes/second = 3.14MBps ~= 25.12 Mbps.
+
+## High Level System Design:
+
+```java
+                                            +-----------------------+
+                                            |         Client        |
+                                            +-----------+-----------+
+                                                        |
+                                                        ↓
+                                            +-----------+-----------+
+                                            |       API Gateway     |
+                                            +-----------+-----------+
+                                                        |
+                                            +-----------+-----------+          +--------------------------+
+                                            | URL Shortening Service|--------->|     Analytics Service    |
+                                            +-----------+-----------+          +--------------------------+
+                                                        |                                   |
+                                                        ↓                                   ↓
+                                            +-----------+-----------+          +--------------------------+
+                                            |         Cache         |          |          Storage         |
+                                            +-----------+-----------+          +------------+-------------+
+                                                        |
+                                                        ↓
+                                            +-----------+-----------+
+                                            |        Database       |
+                                            +-----------------------+
+```
+
+## HTTP Layer:
 
 ### API Endpoints:
 
@@ -90,20 +119,20 @@
         Location: https://www.example.com/long-url-to-be-shortened
         ```
 
-## 5. Application Layer:
+## Application Layer:
 
 ### URL Shortener Service:
 
 -   **Creation:**
 
-        **Encoding Actual URL**:
+        Encoding Actual URL:
 
         -   Compute a unique hash (e.g., MD5 or SHA256) of the URL.
         -   Encode the hash using base64 encoding (e.g., base62 or base64).
         -   Choose the first 6 (or 8) characters for the key.
         -   Workaround for issues: Append an increasing sequence number to each input URL to ensure uniqueness.
 
-        **Generating Keys Offline**:
+        Generating Keys Offline:
 
         -   Use a Key Generation Service (KGS) to generate random seven-letter strings (eg. **zxD32fk** ) stored in a key-DB.
         -   KGS uses two tables: one for unused keys and one for used keys.
@@ -115,27 +144,54 @@
 
 -   **Redirection:**
 
-    -   When a short URL is accessed, redirect the user to the original URL.
-    -   Ensure the provided URL is valid.
-    -   Redirect to default 404 page for invalid/expired short URLs.
+        -   When a short URL is accessed, redirect the user to the original URL.
+        -   Ensure the provided URL is valid.
+        -   Redirect to default 404 page for invalid/expired short URLs.
+
+### Key Generation Service (KGS):
+
+        Responsibilities:
+
+        -   Generates unique short codes for short URLs.
+
+        Implementation:
+
+        -   Utilizes a random key generation algorithm to create unique short codes.
+        -   Manages a pool of unused keys and used keys.
+        -   Ensures key uniqueness and availability.
+        -   Synchronizes access to the key pool
+
+### Analytics Service:
+
+        Responsibilities:
+
+        -   Logs user interactions with short URLs.
+        -   Provides access statistics for short URLs.
+
+        Implementation:
+
+        -   Logs user access to short URLs.
+        -   Tracks the number of clicks and other relevant metrics.
+        -   Generates access statistics for short URLs.
 
 ### Additional Services:
 
+-   **Monitoring & Logging:**
+
+        -   Monitors system health and logs requests for auditing and debugging purposes.
+        -   Utilizes monitoring tools like **Prometheus**, **Grafana**, or **ELK Stack** for monitoring and logging.
+
 -   **Rate Limiting:**
 
-    -   Implement rate limiting to prevent abuse and ensure fair usage.
-
--   **URL Analytics and Tracking:**
-
-    -   Implement a component for tracking user interactions with short URLs.
-    -   Collect data on the number of clicks, geographic information, and user agents.
+         -   Implements rate limiting to prevent abuse and ensure fair usage of the service.
+         -   Uses tools like **Redis** or **Nginx** for rate limiting.
 
 -   **URL Expiration and Archiving:**
 
-    -   Implement a mechanism to set expiration dates for short URLs.
-    -   Archive or delete expired URLs to manage the database efficiently.
+        -   Implement a mechanism to set expiration dates for short URLs.
+        -   Archive or delete expired URLs to manage the database efficiently.
 
-## 6. Data Storage:
+## Data Layer:
 
 ### Database Selection:
 
@@ -219,7 +275,7 @@ Given the characteristics and requirements of the URL shortening service, a NoSQ
 10. **Database Versioning:**
     - Stay updated with the latest database version and apply patches for security and performance improvements.
 
-## 7. Caching:
+## Caching:
 
 -   **Caching Mechanism:**
 
@@ -241,7 +297,7 @@ Given the characteristics and requirements of the URL shortening service, a NoSQ
             -   Cost Analysis:              Evaluate memory costs based on the cache size needed to accommodate frequently accessed data.
             -   Testing and Optimization:   Conduct thorough testing to optimize cache configurations for optimal performance.
 
-## 8. Infrastructure:
+## Infrastructure:
 
 ### Components:
 
